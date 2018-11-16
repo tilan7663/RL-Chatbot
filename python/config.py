@@ -5,12 +5,12 @@ training_data_path = 'data/conversations_lenmax22_formersents2_with_former'
 all_words_path = 'data/all_words.txt'
 
 # training parameters 
-CHECKPOINT = True
-train_model_path = 'model'
-train_model_name = 'model-55'
-start_epoch = 56
+CHECKPOINT = False
+train_model_path = 'model/Elmo'
+train_model_name = 'model-elmo-seq2seq'
+start_epoch = 0
 start_batch = 0
-batch_size = 25
+batch_size = 64
 
 # for RL training
 training_type = 'normal' # 'normal' for seq2seq training, 'pg' for policy gradient

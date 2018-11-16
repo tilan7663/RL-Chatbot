@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 
-from gensim.models import KeyedVectors
+# from gensim.models import KeyedVectors
 from data_reader import Data_Reader
 import data_parser
 import config
@@ -24,14 +24,14 @@ start_epoch = config.start_epoch
 word_count_threshold = config.WC_threshold
 
 ### Train Parameters ###
-dim_wordvec = 300
+dim_wordvec = 1024
 dim_hidden = 1000
 
 n_encode_lstm_step = 22 + 22
 n_decode_lstm_step = 22
 
 epochs = 500
-batch_size = 100
+batch_size = 64
 learning_rate = 0.0001
 
 
@@ -84,7 +84,7 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', padding='pre', truncati
 
 def train():
     wordtoix, ixtoword, bias_init_vector = data_parser.preProBuildWordVocab(word_count_threshold=word_count_threshold)
-    word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
+    # word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
 
     model = Seq2Seq_chatbot(
             dim_wordvec=dim_wordvec,
@@ -96,7 +96,7 @@ def train():
             bias_init_vector=bias_init_vector,
             lr=learning_rate)
 
-    train_op, tf_loss, word_vectors, tf_caption, tf_caption_mask, inter_value = model.build_model()
+    train_op, tf_loss, tf_tokens_input, tf_tokens_length, tf_caption, tf_caption_mask, inter_value = model.build_model()
 
     saver = tf.train.Saver(max_to_keep=100)
 
@@ -119,16 +119,23 @@ def train():
 
             batch_X, batch_Y = dr.generate_training_batch(batch_size)
 
+            # Add padding
+            tokens_input = []
+            tokens_length = []
             for i in range(len(batch_X)):
-                batch_X[i] = [word_vector[w] if w in word_vector else np.zeros(dim_wordvec) for w in batch_X[i]]
-                # batch_X[i].insert(0, np.random.normal(size=(dim_wordvec,))) # insert random normal at the first step
-                if len(batch_X[i]) > n_encode_lstm_step:
-                    batch_X[i] = batch_X[i][:n_encode_lstm_step]
-                else:
-                    for _ in range(len(batch_X[i]), n_encode_lstm_step):
-                        batch_X[i].append(np.zeros(dim_wordvec))
+                tokens = batch_X[i]
+                length = len(tokens)
 
-            current_feats = np.array(batch_X)
+                if length >= n_encode_lstm_step:
+                    tokens_input.append(tokens[:n_encode_lstm_step])
+                    tokens_length.append(n_encode_lstm_step)
+                else:
+                    for i in range(length, n_encode_lstm_step):
+                        tokens.append("")
+                    tokens_input.append(tokens)
+                    tokens_length.append(length)
+
+            # current_feats = np.array(batch_X)
 
             current_captions = batch_Y
             current_captions = map(lambda x: '<bos> ' + x, current_captions)
@@ -141,6 +148,8 @@ def train():
             current_captions = map(lambda x: x.replace('\\', ''), current_captions)
             current_captions = map(lambda x: x.replace('/', ''), current_captions)
 
+
+            current_captions = list(current_captions)
             for idx, each_cap in enumerate(current_captions):
                 word = each_cap.lower().split(' ')
                 if len(word) < n_decode_lstm_step:
@@ -164,7 +173,8 @@ def train():
             current_caption_matrix = pad_sequences(current_caption_ind, padding='post', maxlen=n_decode_lstm_step)
             current_caption_matrix = np.hstack([current_caption_matrix, np.zeros([len(current_caption_matrix), 1])]).astype(int)
             current_caption_masks = np.zeros((current_caption_matrix.shape[0], current_caption_matrix.shape[1]))
-            nonzeros = np.array(map(lambda x: (x != 0).sum() + 1, current_caption_matrix))
+
+            nonzeros = np.array(list(map(lambda x: (x != 0).sum() + 1, current_caption_matrix)))
 
             for ind, row in enumerate(current_caption_masks):
                 row[:nonzeros[ind]] = 1
@@ -173,7 +183,8 @@ def train():
                 _, loss_val = sess.run(
                         [train_op, tf_loss],
                         feed_dict={
-                            word_vectors: current_feats,
+                            tf_tokens_input: tokens_input,
+                            tf_tokens_length: tokens_length,
                             tf_caption: current_caption_matrix,
                             tf_caption_mask: current_caption_masks
                         })
@@ -181,7 +192,8 @@ def train():
             else:
                 _ = sess.run(train_op,
                              feed_dict={
-                                word_vectors: current_feats,
+                                tf_tokens_input: tokens_input,
+                                tf_tokens_length: tokens_length,
                                 tf_caption: current_caption_matrix,
                                 tf_caption_mask: current_caption_masks
                             })
