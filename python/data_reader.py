@@ -1,7 +1,11 @@
 # coding=utf-8
 
 from __future__ import print_function
-import cPickle as pickle
+try:
+    import cPickle as pickle
+except:
+    import pickle
+
 import config
 import random
 

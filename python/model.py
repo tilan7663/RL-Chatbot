@@ -1,6 +1,9 @@
 # coding=utf-8
+import os
+os.environ["TFHUB_CACHE_DIR"] = "/home/tian/"
 
 import tensorflow as tf
+import tensorflow_hub as hub
 import numpy as np
 
 class Seq2Seq_chatbot():
@@ -16,6 +19,8 @@ class Seq2Seq_chatbot():
         with tf.device("/cpu:0"):
             self.Wemb = tf.Variable(tf.random_uniform([n_words, dim_hidden], -0.1, 0.1), name='Wemb')
 
+        self.elmo = hub.Module("https://tfhub.dev/google/elmo/2", trainable=True)
+
         self.lstm1 = tf.contrib.rnn.BasicLSTMCell(dim_hidden, state_is_tuple=False)
         self.lstm2 = tf.contrib.rnn.BasicLSTMCell(dim_hidden, state_is_tuple=False)
 
@@ -29,7 +34,12 @@ class Seq2Seq_chatbot():
             self.embed_word_b = tf.Variable(tf.zeros([n_words]), name='embed_word_b')
 
     def build_model(self):
-        word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
+        # word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
+        tokens_input = tf.placeholder(tf.string, [self.batch_size, self.n_encode_lstm_step])
+        tokens_length = tf.placeholder(tf.int32, [self.batch_size])
+        inputs = {"tokens": tokens_input, "sequence_len": tokens_length}
+        word_vectors = self.elmo(inputs=inputs, signature="tokens", as_dict=True)["elmo"]
+
 
         caption = tf.placeholder(tf.int32, [self.batch_size, self.n_decode_lstm_step+1])
         caption_mask = tf.placeholder(tf.float32, [self.batch_size, self.n_decode_lstm_step+1])
@@ -84,7 +94,7 @@ class Seq2Seq_chatbot():
             current_loss = tf.reduce_sum(cross_entropy)/self.batch_size
             loss = loss + current_loss
 
-        with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+        with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
             train_op = tf.train.AdamOptimizer(self.lr).minimize(loss)
 
         inter_value = {
@@ -92,7 +102,7 @@ class Seq2Seq_chatbot():
             'entropies': entropies
         }
 
-        return train_op, loss, word_vectors, caption, caption_mask, inter_value
+        return train_op, loss, tokens_input, tokens_length, caption, caption_mask, inter_value
 
     def build_generator(self):
         word_vectors = tf.placeholder(tf.float32, [1, self.n_encode_lstm_step, self.dim_wordvec])
