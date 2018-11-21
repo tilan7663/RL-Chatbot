@@ -1,6 +1,9 @@
 # coding=utf-8
+import os
+os.environ["TFHUB_CACHE_DIR"] = "/home/tian/"
 
 import tensorflow as tf
+import tensorflow_hub as hub
 import numpy as np
 
 class PolicyGradient_chatbot():
@@ -16,6 +19,9 @@ class PolicyGradient_chatbot():
         with tf.device("/cpu:0"):
             self.Wemb = tf.Variable(tf.random_uniform([n_words, dim_hidden], -0.1, 0.1), name='Wemb')
 
+        with tf.device("/cpu:0"):
+            self.elmo = hub.Module("https://tfhub.dev/google/elmo/2", trainable=True)
+
         self.lstm1 = tf.contrib.rnn.BasicLSTMCell(dim_hidden, state_is_tuple=False)
         self.lstm2 = tf.contrib.rnn.BasicLSTMCell(dim_hidden, state_is_tuple=False)
 
@@ -29,7 +35,13 @@ class PolicyGradient_chatbot():
             self.embed_word_b = tf.Variable(tf.zeros([n_words]), name='embed_word_b')
 
     def build_model(self):
-        word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
+        # word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
+        tokens_input = tf.placeholder(tf.string, [None, self.n_encode_lstm_step])
+        tokens_length = tf.placeholder(tf.int32, [None])
+        inputs = {"tokens": tokens_input, "sequence_len": tokens_length}
+
+        with tf.device("/cpu:0"):
+            word_vectors = self.elmo(inputs=inputs, signature="tokens", as_dict=True)["elmo"]
 
         caption = tf.placeholder(tf.int32, [self.batch_size, self.n_decode_lstm_step+1])
         caption_mask = tf.placeholder(tf.float32, [self.batch_size, self.n_decode_lstm_step+1])
@@ -83,16 +95,20 @@ class PolicyGradient_chatbot():
             cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logit_words, labels=onehot_labels)
             cross_entropy = cross_entropy * caption_mask[:, i]
             entropies.append(cross_entropy)
+
+            # reward can reduce the loss by adding to it
             pg_cross_entropy = cross_entropy * reward[:, i]
 
             pg_current_loss = tf.reduce_sum(pg_cross_entropy) / self.batch_size
             pg_loss = pg_loss + pg_current_loss
 
-        with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+        with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
             train_op = tf.train.AdamOptimizer(self.lr).minimize(pg_loss)
 
         input_tensors = {
-            'word_vectors': word_vectors,
+            # 'word_vectors': word_vectors,
+            'tokens_input': tokens_input,
+            'tokens_length': tokens_length,
             'caption': caption,
             'caption_mask': caption_mask,
             'reward': reward
@@ -105,7 +121,13 @@ class PolicyGradient_chatbot():
         return train_op, pg_loss, input_tensors, feats
 
     def build_generator(self):
-        word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
+        # word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
+        tokens_input = tf.placeholder(tf.string, [None, self.n_encode_lstm_step])
+        tokens_length = tf.placeholder(tf.int32, [None])
+        inputs = {"tokens": tokens_input, "sequence_len": tokens_length}
+
+        with tf.device("/cpu:0"):
+            word_vectors = self.elmo(inputs=inputs, signature="tokens", as_dict=True)["elmo"]
 
         word_vectors_flat = tf.reshape(word_vectors, [-1, self.dim_wordvec])
         wordvec_emb = tf.nn.xw_plus_b(word_vectors_flat, self.encode_vector_W, self.encode_vector_b)
@@ -162,4 +184,4 @@ class PolicyGradient_chatbot():
             'states': states
         }
 
-        return word_vectors, generated_words, feats
+        return tokens_input, tokens_length, generated_words, feats

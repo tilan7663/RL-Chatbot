@@ -103,6 +103,8 @@ class Seq2Seq_chatbot():
         with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
             train_op = tf.train.AdamOptimizer(self.lr).minimize(loss)
 
+        # entropies are the entropies loss for every decoding step
+        # loss is the culmulative of all lost at every step
         inter_value = {
             'probs': probs,
             'entropies': entropies

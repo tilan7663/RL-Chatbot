@@ -55,6 +55,12 @@ class Data_Reader:
 
         return batch_X, batch_Y, former
 
+    def generate_reverse_training_batch(self, batch_size):
+        batch_index = self.generate_batch_index(batch_size)
+        batch_X = [self.training_data[i][4] for i in batch_index]
+        batch_Y = [self.training_data[i][2] for i in batch_index]
+        return batch_X, batch_Y
+
     def generate_testing_batch(self, batch_size):
         batch_index = self.generate_batch_index(batch_size)
         batch_X = [self.training_data[i][0] for i in batch_index]   # batch_size of conv_a
