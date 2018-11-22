@@ -11,7 +11,7 @@ sys.path.append("python")
 import data_parser
 import config
 
-from gensim.models import KeyedVectors
+# from gensim.models import KeyedVectors
 from rl_model import PolicyGradient_chatbot
 import tensorflow as tf
 import numpy as np
@@ -19,7 +19,7 @@ import numpy as np
 #=====================================================
 # Global Parameters
 #=====================================================
-default_model_path = './model/RL/model-56-3000'
+default_model_path = './model/Elmo/model-RL-0-10'
 testing_data_path = 'sample_input.txt' if len(sys.argv) <= 2 else sys.argv[2]
 output_path = 'sample_output_RL.txt' if len(sys.argv) <= 3 else sys.argv[3]
 
@@ -28,9 +28,10 @@ word_count_threshold = config.WC_threshold
 #=====================================================
 # Train Parameters
 #=====================================================
-dim_wordvec = 300
-dim_hidden = 1000
+dim_wordvec = 1024
+dim_hidden = 256
 
+# n_encode_lstm_step = 22 + 1 # one random normal as the first timestep
 n_encode_lstm_step = 22 + 1 # one random normal as the first timestep
 n_decode_lstm_step = 22
 
@@ -47,7 +48,7 @@ def refine(data):
 def test(model_path=default_model_path):
     testing_data = open(testing_data_path, 'r').read().split('\n')
 
-    word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
+    # word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
 
     _, ixtoword, bias_init_vector = data_parser.preProBuildWordVocab(word_count_threshold=word_count_threshold)
 
@@ -60,7 +61,7 @@ def test(model_path=default_model_path):
             n_decode_lstm_step=n_decode_lstm_step,
             bias_init_vector=bias_init_vector)
 
-    word_vectors, caption_tf, feats = model.build_generator()
+    tf_tokens_input, tf_tokens_length, caption_tf, feats = model.build_generator()
 
     sess = tf.InteractiveSession()
 
@@ -79,18 +80,29 @@ def test(model_path=default_model_path):
             print('question =>', question)
 
             question = [refine(w) for w in question.lower().split()]
-            question = [word_vector[w] if w in word_vector else np.zeros(dim_wordvec) for w in question]
-            question.insert(0, np.random.normal(size=(dim_wordvec,))) # insert random normal at the first step
+            token_length = None
 
             if len(question) > n_encode_lstm_step:
                 question = question[:n_encode_lstm_step]
+                token_length = n_encode_lstm_step
             else:
                 for _ in range(len(question), n_encode_lstm_step):
-                    question.append(np.zeros(dim_wordvec))
+                    question.append("")
+                token_length = len(question)
 
-            question = np.array([question]) # 1x22x300
+            # question = [word_vector[w] if w in word_vector else np.zeros(dim_wordvec) for w in question]
+            # question.insert(0, np.random.normal(size=(dim_wordvec,))) # insert random normal at the first step
+
+            # if len(question) > n_encode_lstm_step:
+            #     question = question[:n_encode_lstm_step]
+            # else:
+            #     for _ in range(len(question), n_encode_lstm_step):
+            #         question.append(np.zeros(dim_wordvec))
+
+            # question = np.array([question]) # 1x22x300
+
     
-            generated_word_index, prob_logit = sess.run([caption_tf, feats['probs']], feed_dict={word_vectors: question})
+            generated_word_index, prob_logit = sess.run([caption_tf, feats['probs']], feed_dict={tf_tokens_input: [question], tf_tokens_length: [token_length]})
             generated_word_index = np.array(generated_word_index).reshape(batch_size, n_decode_lstm_step)[0]
             prob_logit = np.array(prob_logit).reshape(batch_size, n_decode_lstm_step, -1)[0]
             # print('generated_word_index.shape', generated_word_index.shape)
