@@ -19,7 +19,8 @@ class Seq2Seq_chatbot():
         with tf.device("/cpu:0"):
             self.Wemb = tf.Variable(tf.random_uniform([n_words, dim_hidden], -0.1, 0.1), name='Wemb')
 
-        self.elmo = hub.Module("https://tfhub.dev/google/elmo/2", trainable=True)
+        with tf.device("/cpu:0"):
+            self.elmo = hub.Module("https://tfhub.dev/google/elmo/2", trainable=True)
 
         self.lstm1 = tf.contrib.rnn.BasicLSTMCell(dim_hidden, state_is_tuple=False)
         self.lstm2 = tf.contrib.rnn.BasicLSTMCell(dim_hidden, state_is_tuple=False)
@@ -35,10 +36,15 @@ class Seq2Seq_chatbot():
 
     def build_model(self):
         # word_vectors = tf.placeholder(tf.float32, [self.batch_size, self.n_encode_lstm_step, self.dim_wordvec])
-        tokens_input = tf.placeholder(tf.string, [self.batch_size, self.n_encode_lstm_step])
-        tokens_length = tf.placeholder(tf.int32, [self.batch_size])
+        # tokens_input = tf.placeholder(tf.string, [self.batch_size, self.n_encode_lstm_step])
+        # tokens_length = tf.placeholder(tf.int32, [self.batch_size])
+
+        tokens_input = tf.placeholder(tf.string, [None, self.n_encode_lstm_step])
+        tokens_length = tf.placeholder(tf.int32, [None])
         inputs = {"tokens": tokens_input, "sequence_len": tokens_length}
-        word_vectors = self.elmo(inputs=inputs, signature="tokens", as_dict=True)["elmo"]
+
+        with tf.device("/cpu:0"):
+            word_vectors = self.elmo(inputs=inputs, signature="tokens", as_dict=True)["elmo"]
 
 
         caption = tf.placeholder(tf.int32, [self.batch_size, self.n_decode_lstm_step+1])
@@ -97,6 +103,8 @@ class Seq2Seq_chatbot():
         with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
             train_op = tf.train.AdamOptimizer(self.lr).minimize(loss)
 
+        # entropies are the entropies loss for every decoding step
+        # loss is the culmulative of all lost at every step
         inter_value = {
             'probs': probs,
             'entropies': entropies
@@ -105,7 +113,14 @@ class Seq2Seq_chatbot():
         return train_op, loss, tokens_input, tokens_length, caption, caption_mask, inter_value
 
     def build_generator(self):
-        word_vectors = tf.placeholder(tf.float32, [1, self.n_encode_lstm_step, self.dim_wordvec])
+        # word_vectors = tf.placeholder(tf.float32, [1, self.n_encode_lstm_step, self.dim_wordvec])
+        tokens_input = tf.placeholder(tf.string, [None, self.n_encode_lstm_step])
+        tokens_length = tf.placeholder(tf.int32, [None])
+        inputs = {"tokens": tokens_input, "sequence_len": tokens_length}
+
+        with tf.device("/cpu:0"):
+            word_vectors = self.elmo(inputs=inputs, signature="tokens", as_dict=True)["elmo"]
+
 
         word_vectors_flat = tf.reshape(word_vectors, [-1, self.dim_wordvec])
         wordvec_emb = tf.nn.xw_plus_b(word_vectors_flat, self.encode_vector_W, self.encode_vector_b)
@@ -121,9 +136,11 @@ class Seq2Seq_chatbot():
         embeds = []
 
         for i in range(0, self.n_encode_lstm_step):
-            if i > 0:
-                tf.get_variable_scope().reuse_variables()
+            # Since we no longer insert randomness at the beginning of sentence, we can resue variables for all steps
+            # if i > 0:
+                # tf.get_variable_scope().reuse_variables()
 
+            tf.get_variable_scope().reuse_variables()
             with tf.variable_scope("LSTM1"):
                 output1, state1 = self.lstm1(wordvec_emb[:, i, :], state1)
 
@@ -154,4 +171,4 @@ class Seq2Seq_chatbot():
 
             embeds.append(current_embed)
 
-        return word_vectors, generated_words, probs, embeds
+        return tokens_input, tokens_length, generated_words, probs, embeds

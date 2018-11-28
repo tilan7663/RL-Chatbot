@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 
-from gensim.models import KeyedVectors
+# from gensim.models import KeyedVectors
 import data_parser
 import config
 
@@ -27,10 +27,11 @@ word_count_threshold = config.WC_threshold
 #=====================================================
 # Train Parameters
 #=====================================================
-dim_wordvec = 300
+dim_wordvec = 1024
 dim_hidden = 1000
 
-n_encode_lstm_step = 22 + 1 # one random normal as the first timestep
+# n_encode_lstm_step = 22 + 1 # one random normal as the first timestep
+n_encode_lstm_step = 22
 n_decode_lstm_step = 22
 
 batch_size = 1
@@ -46,7 +47,7 @@ def refine(data):
 def test(model_path=default_model_path):
     testing_data = open(testing_data_path, 'r').read().split('\n')
 
-    word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
+    # word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
 
     _, ixtoword, bias_init_vector = data_parser.preProBuildWordVocab(word_count_threshold=word_count_threshold)
 
@@ -59,7 +60,7 @@ def test(model_path=default_model_path):
             n_decode_lstm_step=n_decode_lstm_step,
             bias_init_vector=bias_init_vector)
 
-    word_vectors, caption_tf, probs, _ = model.build_generator()
+    tf_tokens_input, tf_tokens_length, caption_tf, probs, _ = model.build_generator()
 
     sess = tf.InteractiveSession()
 
@@ -78,18 +79,26 @@ def test(model_path=default_model_path):
             print('question =>', question)
 
             question = [refine(w) for w in question.lower().split()]
-            question = [word_vector[w] if w in word_vector else np.zeros(dim_wordvec) for w in question]
-            question.insert(0, np.random.normal(size=(dim_wordvec,))) # insert random normal at the first step
+            token_length = None
+
+
+            # Drop randomness, will figure out different way to add it back
+            # question = [word_vector[w] if w in word_vector else np.zeros(dim_wordvec) for w in question]
+            # question.insert(0, np.random.normal(size=(dim_wordvec,))) # insert random normal at the first step
 
             if len(question) > n_encode_lstm_step:
                 question = question[:n_encode_lstm_step]
+                token_length = n_encode_lstm_step
             else:
                 for _ in range(len(question), n_encode_lstm_step):
-                    question.append(np.zeros(dim_wordvec))
+                    question.append("")
+                token_length = len(question)
 
-            question = np.array([question]) # 1x22x300
+            # question = np.array([question]) # 1x22x300
     
-            generated_word_index, prob_logit = sess.run([caption_tf, probs], feed_dict={word_vectors: question})
+            generated_word_index, prob_logit = sess.run([caption_tf, probs], feed_dict={tf_tokens_input: [question], tf_tokens_length: [token_length]})
+            # print(generated_word_index)
+            # print(prob_logit)
             
             # remove <unk> to second high prob. word
             for i in range(len(generated_word_index)):

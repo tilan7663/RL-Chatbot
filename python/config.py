@@ -13,9 +13,9 @@ start_batch = 0
 batch_size = 64
 
 # for RL training
-training_type = 'normal' # 'normal' for seq2seq training, 'pg' for policy gradient
-reversed_model_path = 'Adam_encode22_decode22_reversed-maxlen22_lr0.0001_batch25_wordthres6'
-reversed_model_name = 'model-63'
+training_type = 'pg' # 'normal' for seq2seq training, 'pg' for policy gradient
+reversed_model_path = 'model/Elmo'
+reversed_model_name = 'model-reverse-0'
 
 # data reader shuffle index list
 load_list = False
