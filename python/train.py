@@ -25,13 +25,13 @@ word_count_threshold = config.WC_threshold
 
 ### Train Parameters ###
 dim_wordvec = 1024
-dim_hidden = 1000
+dim_hidden = 256
 
 n_encode_lstm_step = 22 + 22
 n_decode_lstm_step = 22
 
 epochs = 500
-batch_size = 64
+batch_size = config.batch_size
 learning_rate = 0.0001
 
 
@@ -110,8 +110,13 @@ def train():
         print("Restart training...")
         tf.global_variables_initializer().run()
 
-    dr = Data_Reader()
+    # tensorboard
+    current_time = time.strftime("%Y_%m_%d-%H:%M:%S")
+    merged = tf.summary.merge_all()
+    train_writer = tf.summary.FileWriter('summary/train_seq2seq' + current_time, sess.graph)
 
+    dr = Data_Reader()
+    counter = 0
     for epoch in range(start_epoch, epochs):
         n_batch = dr.get_batch_num(batch_size)
         for batch in range(n_batch):
@@ -179,24 +184,29 @@ def train():
             for ind, row in enumerate(current_caption_masks):
                 row[:nonzeros[ind]] = 1
 
-            if batch % 100 == 0:
-                _, loss_val = sess.run(
-                        [train_op, tf_loss],
+            # print("Epoch: {}, batch: {}, Elapsed time: non train {}".format(epoch, batch, time.time() - start_time))
+            if batch % 50 == 0:
+                summary, _, loss_val = sess.run(
+                        [merged, train_op, tf_loss],
                         feed_dict={
                             tf_tokens_input: tokens_input,
                             tf_tokens_length: tokens_length,
                             tf_caption: current_caption_matrix,
                             tf_caption_mask: current_caption_masks
                         })
+                train_writer.add_summary(summary, counter)
                 print("Epoch: {}, batch: {}, loss: {}, Elapsed time: {}".format(epoch, batch, loss_val, time.time() - start_time))
             else:
-                _ = sess.run(train_op,
+                summary, _ = sess.run([merged, train_op],
                              feed_dict={
                                 tf_tokens_input: tokens_input,
                                 tf_tokens_length: tokens_length,
                                 tf_caption: current_caption_matrix,
                                 tf_caption_mask: current_caption_masks
                             })
+                train_writer.add_summary(summary, counter)
+
+            counter += 1
 
 
         print("Epoch ", epoch, " is done. Saving the model ...")
