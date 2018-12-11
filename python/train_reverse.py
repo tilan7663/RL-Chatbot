@@ -16,23 +16,26 @@ import time
 
 
 ### Global Parameters ###
-checkpoint = config.CHECKPOINT
+checkpoint = False
 model_path = config.train_model_path
 model_name = config.train_model_name
 start_epoch = config.start_epoch
 
-word_count_threshold = config.WC_threshold
+# word_count_threshold = config.WC_threshold
+r_word_count_threshold = config.reversed_WC_threshold
 
 ### Train Parameters ###
 dim_wordvec = 1024
 dim_hidden = 256
 
-n_encode_lstm_step = 22 + 22
-n_decode_lstm_step = 22
+# n_encode_lstm_step = 22 + 22
+# n_decode_lstm_step = 22
+r_n_encode_lstm_step = 22
+r_n_decode_lstm_step = 22
 
 epochs = 500
-batch_size = config.batch_size
-learning_rate = 0.0001
+batch_size = 64
+learning_rate = 0.001
 
 
 def pad_sequences(sequences, maxlen=None, dtype='int32', padding='pre', truncating='pre', value=0.):
@@ -83,7 +86,7 @@ def pad_sequences(sequences, maxlen=None, dtype='int32', padding='pre', truncati
     return x
 
 def train():
-    wordtoix, ixtoword, bias_init_vector = data_parser.preProBuildWordVocab(word_count_threshold=word_count_threshold)
+    wordtoix, ixtoword, bias_init_vector = data_parser.preProBuildWordVocab(word_count_threshold=r_word_count_threshold)
     # word_vector = KeyedVectors.load_word2vec_format('model/word_vector.bin', binary=True)
 
     model = Seq2Seq_chatbot(
@@ -91,8 +94,8 @@ def train():
             n_words=len(wordtoix),
             dim_hidden=dim_hidden,
             batch_size=batch_size,
-            n_encode_lstm_step=n_encode_lstm_step,
-            n_decode_lstm_step=n_decode_lstm_step,
+            n_encode_lstm_step=r_n_encode_lstm_step,
+            n_decode_lstm_step=r_n_decode_lstm_step,
             bias_init_vector=bias_init_vector,
             lr=learning_rate)
 
@@ -110,19 +113,14 @@ def train():
         print("Restart training...")
         tf.global_variables_initializer().run()
 
-    # tensorboard
-    current_time = time.strftime("%Y_%m_%d-%H:%M:%S")
-    merged = tf.summary.merge_all()
-    train_writer = tf.summary.FileWriter('summary/train_seq2seq' + current_time, sess.graph)
-
     dr = Data_Reader()
-    counter = 0
+
     for epoch in range(start_epoch, epochs):
         n_batch = dr.get_batch_num(batch_size)
         for batch in range(n_batch):
             start_time = time.time()
 
-            batch_X, batch_Y = dr.generate_training_batch(batch_size)
+            batch_X, batch_Y = dr.generate_reverse_training_batch(batch_size)
 
             # Add padding
             tokens_input = []
@@ -131,11 +129,11 @@ def train():
                 tokens = batch_X[i]
                 length = len(tokens)
 
-                if length >= n_encode_lstm_step:
-                    tokens_input.append(tokens[:n_encode_lstm_step])
-                    tokens_length.append(n_encode_lstm_step)
+                if length >= r_n_encode_lstm_step:
+                    tokens_input.append(tokens[:r_n_encode_lstm_step])
+                    tokens_length.append(r_n_encode_lstm_step)
                 else:
-                    for i in range(length, n_encode_lstm_step):
+                    for i in range(length, r_n_encode_lstm_step):
                         tokens.append("")
                     tokens_input.append(tokens)
                     tokens_length.append(length)
@@ -157,11 +155,11 @@ def train():
             current_captions = list(current_captions)
             for idx, each_cap in enumerate(current_captions):
                 word = each_cap.lower().split(' ')
-                if len(word) < n_decode_lstm_step:
+                if len(word) < r_n_decode_lstm_step:
                     current_captions[idx] = current_captions[idx] + ' <eos>'
                 else:
                     new_word = ''
-                    for i in range(n_decode_lstm_step-1):
+                    for i in range(r_n_decode_lstm_step-1):
                         new_word = new_word + word[i] + ' '
                     current_captions[idx] = new_word + '<eos>'
 
@@ -175,7 +173,7 @@ def train():
                         current_word_ind.append(wordtoix['<unk>'])
                 current_caption_ind.append(current_word_ind)
 
-            current_caption_matrix = pad_sequences(current_caption_ind, padding='post', maxlen=n_decode_lstm_step)
+            current_caption_matrix = pad_sequences(current_caption_ind, padding='post', maxlen=r_n_decode_lstm_step)
             current_caption_matrix = np.hstack([current_caption_matrix, np.zeros([len(current_caption_matrix), 1])]).astype(int)
             current_caption_masks = np.zeros((current_caption_matrix.shape[0], current_caption_matrix.shape[1]))
 
@@ -186,31 +184,27 @@ def train():
 
             # print("Epoch: {}, batch: {}, Elapsed time: non train {}".format(epoch, batch, time.time() - start_time))
             if batch % 50 == 0:
-                summary, _, loss_val = sess.run(
-                        [merged, train_op, tf_loss],
+                _, loss_val = sess.run(
+                        [train_op, tf_loss],
                         feed_dict={
                             tf_tokens_input: tokens_input,
                             tf_tokens_length: tokens_length,
                             tf_caption: current_caption_matrix,
                             tf_caption_mask: current_caption_masks
                         })
-                train_writer.add_summary(summary, counter)
                 print("Epoch: {}, batch: {}, loss: {}, Elapsed time: {}".format(epoch, batch, loss_val, time.time() - start_time))
             else:
-                summary, _ = sess.run([merged, train_op],
+                _ = sess.run(train_op,
                              feed_dict={
                                 tf_tokens_input: tokens_input,
                                 tf_tokens_length: tokens_length,
                                 tf_caption: current_caption_matrix,
                                 tf_caption_mask: current_caption_masks
                             })
-                train_writer.add_summary(summary, counter)
-
-            counter += 1
 
 
         print("Epoch ", epoch, " is done. Saving the model ...")
-        saver.save(sess, os.path.join(model_path, 'model'), global_step=epoch)
+        saver.save(sess, os.path.join(model_path, 'model-reverse'), global_step=epoch)
 
 if __name__ == "__main__":
     train()
